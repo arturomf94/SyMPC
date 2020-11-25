@@ -1,14 +1,14 @@
 import torch
 
-from .utils import modulo
-from ..encoder import FixedPointEncoder
+from .fixed_precision import FixedPrecisionTensor
+
 from copy import deepcopy
 import operator
 
 
 class AdditiveSharingTensor:
 
-    def __init__(self, secret=None, shares=None, session=None):
+    def __init__(self, secret=None, shape=None, shares=None, session=None):
         if not session:
             raise ValueError("Session should not be None")
 
@@ -18,56 +18,43 @@ class AdditiveSharingTensor:
         self.session = session
         self.shape = None
 
-        conf = session.config
-        self.fp_encoder = FixedPointEncoder(base=conf.enc_base, precision=conf.enc_precision)
-
         if secret is not None:
+            if not shape:
+                raise ValueError("Shape must be specified if secret is specified")
+
             parties = session.parties
-            secret = self.fp_encoder.encode(secret)
-            self.shape = secret.shape
-            shares = AdditiveSharingTensor.generate_shares(secret, session)
-            self.shares = []
-            for share, party in zip(shares, parties):
-                self.shares.append(share.send(party))
+            self.shape = shape
+            self.shares = AdditiveSharingTensor.generate_przs(self.shape, self.session)
+
+            # The party that has the secret also adds it to his share
+            for i, share in enumerate(self.shares):
+                if share.client == secret.client:
+                    self.shares[i] = self.shares[i] + secret
+
         elif shares is not None:
             self.shares = shares
 
     @staticmethod
-    def generate_shares(secret, session):
-        parties = session.parties
-        nr_parties = len(parties)
-
-        shape = secret.shape
-        min_value = session.config.min_value
-        max_value = session.config.max_value
-
-        random_shares = []
-        for _ in range(nr_parties - 1):
-            rand_long = torch.randint(min_value, max_value, shape).long()
-            random_shares.append(rand_long)
+    def generate_przs(shape, session):
+        shape = tuple(shape)
 
         shares = []
-        for i in range(len(parties)):
-            if i == 0:
-                share = random_shares[i]
-            elif i < nr_parties - 1:
-                share = random_shares[i] - random_shares[i-1]
-            else:
-                share = secret - random_shares[i-1]
-
-            share = modulo(share, session)
+        for session_ptr, generators_ptr in zip(session.session_ptr, session.przs_generators):
+            share = session_ptr.przs_generate_random_elem(shape, generators_ptr)
             shares.append(share)
 
         return shares
 
-    def reconstruct(self, decode=True):
-        plaintext = self.shares[0].get()
 
-        for share in self.shares[1:]:
-            plaintext = modulo(plaintext + share.get(), self.session)
+    def reconstruct(self, decode=True):
+        plaintext = FixedPrecisionTensor(data=0, config=self.session.config)
+
+        for share in self.shares:
+            plaintext += share.get()
 
         if decode:
-            plaintext = self.fp_encoder.decode(plaintext)
+            plaintext = plaintext.decode()
+
         return plaintext
 
     def add(self, y):
@@ -90,54 +77,28 @@ class AdditiveSharingTensor:
             from ..protocol import spdz
 
             shares = spdz.mul_master(self, y, op_str)
-            self_precision = self.fp_encoder.precision
-            y_precision = y.fp_encoder.precision
-            result = AdditiveSharingTensor.__apply_encoding(self_precision, y_precision, shares, self.session, op_str)
+            result = AdditiveSharingTensor(shares=shares, session=self.session)
         elif op_str in {"sub", "add"}:
             op = getattr(operator, op_str)
             result = AdditiveSharingTensor(session=self.session)
-            result.encoder = deepcopy(self.fp_encoder)
             result.shares = [
-                    modulo(op(*share_tuple), self.session)
+                    op(*share_tuple)
                     for share_tuple in zip(self.shares, y.shares)
             ]
 
         return result
 
-    @staticmethod
-    def __apply_encoding(x_precision, y_precision, shares, session, op_str):
-        max_prec = max(x_precision, y_precision)
-        fp_encoder = FixedPointEncoder(precision=max_prec)
-
-        if x_precision and y_precision:
-                shares = [share // fp_encoder.scale for share in shares]
-
-        shares = [modulo(share, session) for share in shares]
-
-        result = AdditiveSharingTensor(shares=shares, session=session)
-        result.fp_encoder = fp_encoder
-
-        return result
-
     def __apply_public_op(self, y, op_str):
-        if not isinstance(y, torch.Tensor):
-            y = torch.Tensor([y])
-
-        y = self.fp_encoder.encode(y)
-
         op = getattr(operator, op_str)
         # Here are two sens: one for modulo and one for op
         # TODO: Make only one operation
 
         if op_str in {"mul"}:
-            shares = [
-                modulo(op(share, y), self.session) // self.fp_encoder.scale
-                for share in self.shares
-            ]
+            shares = [op(share, y) for share in self.shares]
         else:
             operands_shares = [y] + [0 for _ in range(len(self.shares)-1)]
             shares = [
-                modulo(op(*tuple_shares), self.session)
+                op(*tuple_shares)
                 for tuple_shares in zip(self.shares, operands_shares)
             ]
 
@@ -158,7 +119,6 @@ class AdditiveSharingTensor:
     def __str__(self):
         type_name = type(self).__name__
         out = f"[{type_name}]"
-        out = f"{out}\n\t{self.fp_encoder}"
 
         for share in self.shares:
             out = f"{out}\n\t{share.client} -> {share.__name__}"

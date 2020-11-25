@@ -1,8 +1,6 @@
 import torch
 
-def modulo(x, session):
-    config = session.config
-
+def modulo(x, config):
     max_val = config.max_value
     min_val = config.min_value
     ring_size = config.ring_size
@@ -14,3 +12,6 @@ def modulo(x, session):
     result = (x + mask * ring_size).long()
 
     return result
+
+
+

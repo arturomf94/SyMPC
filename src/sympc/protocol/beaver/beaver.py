@@ -2,7 +2,7 @@ import torch
 import operator
 from copy import deepcopy
 
-from ...tensor import modulo
+from ...tensor.utils import modulo
 
 EXPECTED_OPS = {"matmul", "mul"}
 

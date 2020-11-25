@@ -9,14 +9,14 @@ import torch
 
 
 class FixedPointEncoder:
-    def __init__(self, base=10, precision=4):
+    def __init__(self, base=10, precision=4, ring_size=2**62):
         self._precision = precision
         self._base = base
         self._scale = base ** precision
 
     def encode(self, value):
         if not isinstance(value, torch.Tensor):
-            value = torch.tensor(value)
+            value = torch.tensor([value])
 
         return (value * self._scale).long()
 

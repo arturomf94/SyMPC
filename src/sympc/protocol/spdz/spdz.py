@@ -3,7 +3,7 @@ import sympc
 from concurrent.futures import ThreadPoolExecutor, wait
 
 from .. import beaver
-from ...tensor import modulo
+from ...tensor.utils import modulo
 
 
 EXPECTED_OPS = {"mul", "matmul"}
@@ -50,12 +50,12 @@ def mul_master(x, y, op_str):
 def mul_parties(session, a_share, b_share, c_share, eps, delta, op_str):
     op = getattr(operator, op_str)
 
-    eps_b = modulo(op(eps, b_share), session)
-    delta_a = modulo(op(delta, a_share), session)
+    eps_b = op(eps, b_share)
+    delta_a = op(delta, a_share)
 
-    share = modulo(c_share + eps_b + delta_a, session)
+    share = c_share + eps_b + delta_a
     if session.rank == 0:
-        delta_eps = modulo(op(delta, eps), session)
+        delta_eps = delta, eps
         share = share + delta_eps
 
-    return modulo(share, session)
+    return share, session
