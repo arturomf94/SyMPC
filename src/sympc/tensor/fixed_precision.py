@@ -28,7 +28,6 @@ class FixedPrecisionTensor:
         self.fp_encoder = FixedPointEncoder(
             base=self.config.encoder_base,
             precision=self.config.encoder_precision,
-            ring_size=self.config.ring_size
         )
 
         self._tensor = None
@@ -50,6 +49,7 @@ class FixedPrecisionTensor:
         y_base = y.config.encoder_base
 
         if x_prec != y_prec and x_prec * y_prec != 0:
+            # Check both value has a specified precision and they differ
             raise ValueError(f"The precisions do not match {x_prec} with {y_prec}")
 
         if x_base != y_base:
@@ -79,16 +79,7 @@ class FixedPrecisionTensor:
     def mul(self, y):
         y = FixedPrecisionTensor.sanity_checks(self, y)
         res = self.apply_function(y, "mul")
-
-        if self.fp_encoder.precision and y.fp_encoder.precision:
-            res._tensor = res._tensor // self.fp_encoder.scale
-            print("here", self.fp_encoder.scale, self, y)
-
-        fp_encoder = FixedPointEncoder(
-            base=res.fp_encoder.base,
-            precision=max(self.fp_encoder.precision, y.fp_encoder.precision)
-        )
-
+        res._tensor = res._tensor // self.fp_encoder.scale
         res._tensor = modulo(res._tensor, res.config)
         return res
 
@@ -115,8 +106,8 @@ class FixedPrecisionTensor:
     def __str__(self):
         type_name = type(self).__name__
         out = f"[{type_name}]"
-        out = f"{out}\n\t{self.fp_encoder}"
-        out = f"{out}\n\tData: {self._tensor}"
+        out = f"{out}\n\t| {self.fp_encoder}"
+        out = f"{out}\n\t| Data: {self._tensor}"
 
         return out
 

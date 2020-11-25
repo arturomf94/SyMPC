@@ -102,6 +102,8 @@ class AdditiveSharingTensor:
         plaintext = FixedPrecisionTensor(data=0, config=self.session.config)
 
         for share in self.shares:
+            print(f"Request share from {share.client}")
+            share.request(block=True)
             plaintext += share.get()
 
         if decode:
@@ -173,10 +175,7 @@ class AdditiveSharingTensor:
         out = f"[{type_name}]"
 
         for share in self.shares:
-            print(share)
-            type_share = type(share).__name__
-            out = f"{out}\n\t{type_share} -> {share.__name__}"
-
+            out = f"{out}\n\t| {share.client} -> {share.__name__}"
         return out
 
     __add__ = add

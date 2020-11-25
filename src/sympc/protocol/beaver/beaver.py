@@ -30,11 +30,11 @@ def build_triples(x, y, op_str):
 
     # TODO: Move this to a library specific file
     a = FixedPrecisionTensor(
-        data=10000,
+        data=torch.randint(min_val, max_val, shape_x).long(),
         config=session_copy.config
     )
     b = FixedPrecisionTensor(
-        data=10000,
+        data=torch.randint(min_val, max_val, shape_y).long(),
         config=session_copy.config
     )
 

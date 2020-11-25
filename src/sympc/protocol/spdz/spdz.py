@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from .. import beaver
 from ...tensor.utils import modulo
 
+from ...tensor import FixedPrecisionTensor
+
 
 EXPECTED_OPS = {"mul", "matmul"}
 
@@ -25,7 +27,6 @@ def mul_master(x, y, op_str):
         raise ValueError(f"{op_str} should be in {EXPECTED_OPS}")
 
     a_sh, b_sh, c_sh = beaver.build_triples(x, y, op_str)
-    import pdb; pdb.set_trace()
     eps = x - a_sh
     delta = y - b_sh
     session = x.session
@@ -47,14 +48,20 @@ def mul_master(x, y, op_str):
 
 """ Functions that are executed at each party """
 def mul_parties(session, a_share, b_share, c_share, eps, delta, op_str):
+    fp_share = FixedPrecisionTensor(config=session.config)
+
     op = getattr(operator, op_str)
 
-    eps_b = op(eps, b_share)
-    delta_a = op(delta, a_share)
+    eps_b = op(eps._tensor, b_share._tensor)
+    delta_a = op(delta._tensor, a_share._tensor)
 
     share = c_share + eps_b + delta_a
     if session.rank == 0:
-        delta_eps = op(delta, eps)
+        delta_eps = op(delta._tensor, eps._tensor)
         share = share + delta_eps
 
-    return share
+    share = share._tensor // eps.fp_encoder.scale
+
+    fp_share._tensor = modulo(share, session.config)
+
+    return fp_share
