@@ -35,7 +35,7 @@ def mul_master(x, y, op_str):
     eps_plaintext = eps.reconstruct(decode=False)
     delta_plaintext = delta.reconstruct(decode=False)
 
-    with ThreadPoolExecutor(max_workers=nr_parties) as executor:
+    with ThreadPoolExecutor(max_workers=nr_parties, thread_name_prefix="spdz_mul_master")) as executor:
         args = list(zip(session.session_ptr, a_sh.shares, b_sh.shares, c_sh.shares))
         futures = [
             executor.submit(session.parties[i].sympc.protocol.spdz.mul_parties, *args[i], eps_plaintext, delta_plaintext, op_str)

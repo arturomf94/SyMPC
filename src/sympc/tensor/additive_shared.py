@@ -1,5 +1,7 @@
 import torch
 
+from concurrent.futures import ThreadPoolExecutor, wait
+
 from .fixed_precision import FixedPrecisionTensor
 
 from copy import deepcopy
@@ -99,12 +101,20 @@ class AdditiveSharingTensor:
         return shares
 
     def reconstruct(self, decode=True):
-        plaintext = FixedPrecisionTensor(data=0, config=self.session.config)
 
-        for share in self.shares:
-            print(f"Request share from {share.client}")
-            share.request(block=True)
-            plaintext += share.get()
+        def _request_and_get(share_ptr):
+            share_ptr.request(block=True)
+            return share_ptr.get()
+
+        nr_parties = len(session.parties)
+        with ThreadPoolExecutor(max_workers=nr_parties,thread_name_prefix="ast_request_and_get") as executor:
+            futures = [executor.submit(_request_and_get, share) for share in self.shares]
+
+        local_shares = [f.result() for f in futures]
+
+        plaintext = FixedPrecisionTensor(data=0, config=self.session.config)
+        for share in local_shares:
+            plaintext += share
 
         if decode:
             plaintext = plaintext.decode()
