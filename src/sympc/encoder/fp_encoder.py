@@ -9,7 +9,7 @@ import torch
 
 
 class FixedPointEncoder:
-    def __init__(self, base=10, precision=4, ring_size=2**62):
+    def __init__(self, base=10, precision=4):
         self._precision = precision
         self._base = base
         self._scale = base ** precision

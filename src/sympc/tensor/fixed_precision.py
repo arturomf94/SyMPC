@@ -12,7 +12,7 @@ class FixedPrecisionTensor:
             config=None,
             encoder_base=10,
             encoder_precision=4,
-            ring_size=2**62
+            ring_size=2**62,
         ):
 
         if config is None:
@@ -47,9 +47,9 @@ class FixedPrecisionTensor:
         y_prec = y.config.encoder_precision
 
         x_base = x.config.encoder_base
-        y_base = x.config.encoder_base
+        y_base = y.config.encoder_base
 
-        if x_prec != y_prec :
+        if x_prec != y_prec and x_prec * y_prec != 0:
             raise ValueError(f"The precisions do not match {x_prec} with {y_prec}")
 
         if x_base != y_base:
@@ -79,7 +79,16 @@ class FixedPrecisionTensor:
     def mul(self, y):
         y = FixedPrecisionTensor.sanity_checks(self, y)
         res = self.apply_function(y, "mul")
-        res._tensor = res._tensor // self.fp_encoder.scale
+
+        if self.fp_encoder.precision and y.fp_encoder.precision:
+            res._tensor = res._tensor // self.fp_encoder.scale
+            print("here", self.fp_encoder.scale, self, y)
+
+        fp_encoder = FixedPointEncoder(
+            base=res.fp_encoder.base,
+            precision=max(self.fp_encoder.precision, y.fp_encoder.precision)
+        )
+
         res._tensor = modulo(res._tensor, res.config)
         return res
 
@@ -123,5 +132,7 @@ class FixedPrecisionTensor:
     __add__ = add
     __radd__ = add
     __sub__ = sub
+    __rsub__ = sub
     __mul__ = mul
+    __rmul__ = mul
     __div__ = div

@@ -12,6 +12,3 @@ def modulo(x, config):
     result = (x + mask * ring_size).long()
 
     return result
-
-
-

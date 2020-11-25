@@ -14,24 +14,33 @@ def build_triples(x, y, op_str):
     if op_str not in EXPECTED_OPS:
         raise ValueError(f"{op_str} should be in {EXPECTED_OPS}")
 
-    session = x.session
+    from sympc.tensor import AdditiveSharingTensor
+    from sympc.tensor import FixedPrecisionTensor
+
     shape_x = x.shape
     shape_y = y.shape
+
+    session = x.session
     conf = session.config
     min_val = conf.min_value
     max_val = conf.max_value
 
+    session_copy = session.get_copy()
+    session_copy.config.encoder_precision = 0
+
     # TODO: Move this to a library specific file
-    a = torch.randint(min_val, max_val, shape_x).long()
-    b = torch.randint(min_val, max_val, shape_y).long()
+    a = FixedPrecisionTensor(
+        data=10000,
+        config=session_copy.config
+    )
+    b = FixedPrecisionTensor(
+        data=10000,
+        config=session_copy.config
+    )
 
     cmd = getattr(operator, op_str)
-    c = modulo(cmd(a, b).long(), session)
+    c = cmd(a, b)
 
-    from sympc.tensor import AdditiveSharingTensor
-
-    session_copy = session.get_copy()
-    session_copy.config.enc_precision = 0
 
     a_sh = AdditiveSharingTensor(secret=a, session=session_copy)
     b_sh = AdditiveSharingTensor(secret=b, session=session_copy)

@@ -19,20 +19,46 @@ class AdditiveSharingTensor:
         self.shape = None
 
         if secret is not None:
-            if not shape:
-                raise ValueError("Shape must be specified if secret is specified")
-
+            secret, shape, is_remote_secret = AdditiveSharingTensor.sanity_checks(secret, shape, session)
             parties = session.parties
             self.shape = shape
-            self.shares = AdditiveSharingTensor.generate_przs(self.shape, self.session)
 
-            # The party that has the secret also adds it to his share
-            for i, share in enumerate(self.shares):
-                if share.client == secret.client:
-                    self.shares[i] = self.shares[i] + secret
+            if is_remote_secret:
+                # If the secret is remote we use PRZS (Pseudo-Random-Zero Shares) and the
+                # party that holds the secret will add it to it's share
+                self.shares = AdditiveSharingTensor.generate_przs(self.shape, self.session)
+                for i, share in enumerate(self.shares):
+                    if share.client == secret.client:
+                        self.shares[i] = self.shares[i] + secret
+            else:
+                self.shares = []
+                shares = AdditiveSharingTensor.generate_shares(secret, self.session)
+                for share, party in zip(shares, self.session.parties):
+                    self.shares.append(share.send(party))
 
         elif shares is not None:
             self.shares = shares
+
+
+    @staticmethod
+    def sanity_checks(secret, shape, session):
+        is_remote_secret = False
+
+        if "Pointer" in type(secret).__name__:
+            is_remote_secret = True
+            if shape is None:
+                raise ValueError("Shape must be specified if secret is at another worker")
+        else:
+            if isinstance(secret, (int, float)):
+                secret = torch.Tensor([secret])
+
+            if isinstance(secret, torch.Tensor):
+                secret = FixedPrecisionTensor(secret, session.config)
+
+            shape = secret.shape
+
+        return secret, shape, is_remote_secret
+
 
     @staticmethod
     def generate_przs(shape, session):
@@ -45,6 +71,32 @@ class AdditiveSharingTensor:
 
         return shares
 
+    @staticmethod
+    def generate_shares(secret, session):
+        parties = session.parties
+        nr_parties = len(parties)
+
+        shape = secret.shape
+        min_value = session.config.min_value
+        max_value = session.config.max_value
+
+        random_shares = []
+        for _ in range(nr_parties - 1):
+            rand_long = torch.randint(min_value, max_value, shape).long()
+            fpt_rand = FixedPrecisionTensor(data=rand_long,  config=session.config)
+            random_shares.append(fpt_rand)
+
+        shares = []
+        for i in range(len(parties)):
+            if i == 0:
+                share = random_shares[i]
+            elif i < nr_parties - 1:
+                share = random_shares[i] - random_shares[i-1]
+            else:
+                share = secret - random_shares[i-1]
+
+            shares.append(share)
+        return shares
 
     def reconstruct(self, decode=True):
         plaintext = FixedPrecisionTensor(data=0, config=self.session.config)
@@ -121,7 +173,9 @@ class AdditiveSharingTensor:
         out = f"[{type_name}]"
 
         for share in self.shares:
-            out = f"{out}\n\t{share.client} -> {share.__name__}"
+            print(share)
+            type_share = type(share).__name__
+            out = f"{out}\n\t{type_share} -> {share.__name__}"
 
         return out
 
