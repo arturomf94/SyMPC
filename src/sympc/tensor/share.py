@@ -1,28 +1,34 @@
-from ..encoder import FixedPointEncoder
-from .utils import modulo
-from ..config import Config
+from sympc.encoder import FixedPointEncoder
+from sympc.tensor.utils import modulo
+from sympc.session import Session
 import operator
 
 
-class FixedPrecisionTensor:
+class ShareTensor:
+    """
+        This class represents only 1 share  (from n) that a party
+        can generate when secretly sharing that a party holds
+    """
+
+    __slots__ = {"_tensor", "session", "fp_encoder"}
 
     def __init__(
             self,
             data=None,
-            config=None,
+            session=None,
             encoder_base=10,
             encoder_precision=4,
             ring_size=2**62,
         ):
 
-        if config is None:
-            self.config = Config(
+        if session is None:
+            self.session = Session(
+                ring_size=ring_size,
                 encoder_base=encoder_base,
                 encoder_precision=encoder_precision,
-                ring_size=ring_size
             )
         else:
-            self.config = config
+            self.session = session
 
         # TODO: It looks like the same logic as above
         self.fp_encoder = FixedPointEncoder(
@@ -34,13 +40,10 @@ class FixedPrecisionTensor:
         if data is not None:
             self._tensor = self.fp_encoder.encode(data)
 
-    def decode(self):
-        return self.fp_encoder.decode(self._tensor)
-
     @staticmethod
     def sanity_checks(x, y):
-        if not isinstance(y, FixedPrecisionTensor):
-            y = FixedPrecisionTensor(data=y, config=x.config)
+        if not isinstance(y, ShareTensor):
+            y = ShareTensor(data=y, config=x.config)
 
         x_prec = x.config.encoder_precision
         y_prec = y.config.encoder_precision
@@ -60,24 +63,24 @@ class FixedPrecisionTensor:
     def apply_function(self, y, op_str):
         op = getattr(operator, op_str)
         value = op(self._tensor, y._tensor)
-        res = FixedPrecisionTensor(config=self.config)
+        res = ShareTensor(config=self.config)
         res._tensor = value
         return res
 
     def add(self, y):
-        y = FixedPrecisionTensor.sanity_checks(self, y)
+        y = ShareTensor.sanity_checks(self, y)
         res = self.apply_function(y, "add")
         res._tensor = modulo(res._tensor, res.config)
         return res
 
     def sub(self, y):
-        y = FixedPrecisionTensor.sanity_checks(self, y)
+        y = ShareTensor.sanity_checks(self, y)
         res = self.apply_function(y, "sub")
         res._tensor = modulo(res._tensor, res.config)
         return res
 
     def mul(self, y):
-        y = FixedPrecisionTensor.sanity_checks(self, y)
+        y = ShareTensor.sanity_checks(self, y)
         res = self.apply_function(y, "mul")
         res._tensor = res._tensor // self.fp_encoder.scale
         res._tensor = modulo(res._tensor, res.config)
@@ -90,16 +93,17 @@ class FixedPrecisionTensor:
     def __getattr__(self, attr_name):
         # Default to some tensor specific attributes like
         # size, shape, etc.
+        import pdb; pdb.set_trace()
         tensor = self._tensor
         return getattr(tensor, attr_name)
 
     def __gt__(self, y):
-        y = FixedPrecisionTensor.sanity_checks(self, y)
+        y = ShareTensor.sanity_checks(self, y)
         res = self._tensor < y._tensor
         return res
 
     def __lt__(self, y):
-        y = FixedPrecisionTensor.sanity_checks(self, y)
+        y = ShareTensor.sanity_checks(self, y)
         res = self._tensor < y._tensor
         return res
 

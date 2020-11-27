@@ -1,6 +1,7 @@
 from uuid import uuid1
 
-from ..config import Config
+from sympc.config import Config
+
 from copy import deepcopy
 import random
 
@@ -9,7 +10,7 @@ import random
 import torch
 
 class Session:
-    def __init__(self, config=None, parties=None, ttp=None, uuid=None):
+    def __init__(self, ring_size=2**32, config=None, parties=None, ttp=None, uuid=None):
         self.uuid = uuid1() if uuid is None else uuid
 
         # Each worker will have the rank as the index in the list
@@ -18,6 +19,7 @@ class Session:
         # Some protocols require a trusted third party
         # Ex: SPDZ
         self.trusted_third_party = ttp
+
         self.crypto_store = {}
         self.protocol = None
         self.config = config if config else Config()
@@ -27,6 +29,12 @@ class Session:
         # Those will be populated in the setup_mpc
         self.rank = None
         self.session_ptr = []
+
+        # Ring size
+        self.ring_size = ring_size
+        self.min_value = -(ring_size // 2)
+        self.max_value = (ring_size - 1) // 2
+
 
     def get_copy(self):
         session_copy = Session()
@@ -43,16 +51,16 @@ class Session:
         return session_copy
 
     def przs_generate_random_elem(self, shape, generators):
-        from ..tensor import FixedPrecisionTensor
+        from sympc.tensor import ShareTensor
 
         gen0, gen1 = generators
-        min_value = self.config.min_value
-        max_value = self.config.max_value
+        min_value = self.min_value
+        max_value = self.max_value
 
         current_share = torch.randint(min_value, max_value, size=shape, generator=gen0)
         next_share = torch.randint(min_value, max_value, size=shape, generator=gen1)
 
-        share = FixedPrecisionTensor(data=current_share - next_share, config=self.config)
+        share = ShareTensor(data=current_share - next_share, session=self)
 
         return share
 

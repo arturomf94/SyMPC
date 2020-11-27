@@ -2,13 +2,18 @@ import torch
 
 from concurrent.futures import ThreadPoolExecutor, wait
 
-from .fixed_precision import FixedPrecisionTensor
+from .share import ShareTensor
 
 from copy import deepcopy
 import operator
 
 
 class AdditiveSharingTensor:
+    """
+        This class is used to "control the shares"
+    """
+
+    __slots__ = {"shares_ptr", "session", "shape"}
 
     def __init__(self, secret=None, shape=None, shares=None, session=None):
         if not session:
@@ -28,18 +33,18 @@ class AdditiveSharingTensor:
             if is_remote_secret:
                 # If the secret is remote we use PRZS (Pseudo-Random-Zero Shares) and the
                 # party that holds the secret will add it to it's share
-                self.shares = AdditiveSharingTensor.generate_przs(self.shape, self.session)
+                self.shares_ptrs = AdditiveSharingTensor.generate_przs(self.shape, self.session)
                 for i, share in enumerate(self.shares):
                     if share.client == secret.client:
                         self.shares[i] = self.shares[i] + secret
             else:
-                self.shares = []
+                self.shares_ptr = []
                 shares = AdditiveSharingTensor.generate_shares(secret, self.session)
                 for share, party in zip(shares, self.session.parties):
-                    self.shares.append(share.send(party))
+                    self.shares_ptr.append(share.send(party))
 
         elif shares is not None:
-            self.shares = shares
+            self.shares_ptr = shares
 
 
     @staticmethod
@@ -55,7 +60,7 @@ class AdditiveSharingTensor:
                 secret = torch.Tensor([secret])
 
             if isinstance(secret, torch.Tensor):
-                secret = FixedPrecisionTensor(secret, session.config)
+                secret = ShareTensor(secret, session.config)
 
             shape = secret.shape
 

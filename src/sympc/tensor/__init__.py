@@ -1,9 +1,9 @@
-from .additive_shared import AdditiveSharingTensor
-from .fixed_precision import FixedPrecisionTensor
-from . import utils
+from sympc.tensor.additive_shared import AdditiveSharingTensor
+from sympc.tensor.share import ShareTensor
+from sympc.tensor import utils
 
 __all__ = [
         "AdditiveSharingTensor",
-        "FixedPrecisionTensor",
+        "ShareTensor",
         "utils",
 ]
